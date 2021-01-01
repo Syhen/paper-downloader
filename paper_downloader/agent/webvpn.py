@@ -3,6 +3,8 @@
 create on 2020-12-29 23:26
 author @66492
 """
+import os
+
 import pickle
 import requests
 from lxml import etree
