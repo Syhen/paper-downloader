@@ -43,5 +43,5 @@ class InformsPubsOnlineDownloader(BaseDownloader):
 
 
 if __name__ == '__main__':
-    taylor_downloader = InformsPubsOnlineDownloader()
-    print(taylor_downloader.download("https://webvpn.swufe.edu.cn/https/77726476706e69737468656265737421f4f848d228226f/10.1287/mnsc.2020.3640"))
+    informs_downloader = InformsPubsOnlineDownloader()
+    print(informs_downloader.download("https://doi.org/10.1287/mnsc.2020.3640"))
