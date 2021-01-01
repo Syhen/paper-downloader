@@ -30,7 +30,9 @@ class BaseDownloader(object):
         if "/" in filename:
             return filename
         if ".pdf" not in filename:
-            return os.path.join(self.dir_, filename + ".pdf")
+            filename += ".pdf"
+        if ":" in filename:
+            filename = filename.replace(":", "-")
         return os.path.join(self.dir_, filename)
 
     def _download_pdf(self, pdf_url, filename):
