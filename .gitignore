@@ -38,3 +38,6 @@ __pypackages__/
 
 # json files
 *.json
+
+# example for test
+exp/
