@@ -9,17 +9,19 @@ import requests
 
 from paper_downloader.agent.webvpn import WebVPNAgent
 from paper_downloader.settings import settings, default_settings
+from paper_downloader.utils.encryto.aes import WebVPNEncoder
 
 
 class BaseDownloader(object):
     domain = None
 
-    def __init__(self, agent_cls=WebVPNAgent, dir="/Users/66492/Desktop"):
+    def __init__(self, agent_cls=WebVPNAgent, encoder_cls=WebVPNEncoder, dir="/Users/66492/Desktop"):
         self.dir_ = dir
         self.headers = {
             "user-agent": settings.get("USER_AGENT", default_settings.USER_AGENT),
         }
-        self.agent = WebVPNAgent(school=settings.get("SCHOOL", default_settings.SCHOOL))
+        self.agent = agent_cls(school=settings.get("SCHOOL", default_settings.SCHOOL))
+        self.encoder = encoder_cls()
 
     def download(self, url):
         raise NotImplemented()
@@ -32,9 +34,11 @@ class BaseDownloader(object):
         return os.path.join(self.dir_, filename)
 
     def _download_pdf(self, pdf_url, filename):
+        pdf_url = self.encoder.encode(pdf_url)
         filename = self._complete_filename(filename)
         with open(filename, "wb") as f:
-            f.write(requests.get(pdf_url, headers=self.headers).content)
+            response = self.agent.get(pdf_url)
+            f.write(response.content)
 
 
 if __name__ == '__main__':
