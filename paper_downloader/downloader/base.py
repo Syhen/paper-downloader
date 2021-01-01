@@ -23,7 +23,7 @@ class BaseDownloader(object):
         self.agent = agent_cls(school=settings.get("SCHOOL", default_settings.SCHOOL))
         self.encoder = encoder_cls()
 
-    def download(self, url):
+    def download(self, url: str, filename=None):
         raise NotImplemented()
 
     def _complete_filename(self, filename):

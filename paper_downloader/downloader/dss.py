@@ -9,14 +9,16 @@ from urllib import parse as urlparse
 from lxml import etree
 
 from paper_downloader import exceptions
+from paper_downloader.agent.webvpn import WebVPNAgent
 from paper_downloader.downloader.base import BaseDownloader
+from paper_downloader.utils.encryto.aes import WebVPNEncoder
 
 
 class DSSDownloader(BaseDownloader):
     domain = "https://www.sciencedirect.com/"
 
-    def __init__(self, dir="C:/Users/66492/Desktop"):
-        super(DSSDownloader, self).__init__(dir=dir)
+    def __init__(self, agent_cls=WebVPNAgent, encoder_cls=WebVPNEncoder, dir="C:/Users/66492/Desktop"):
+        super(DSSDownloader, self).__init__(agent_cls=agent_cls, encoder_cls=encoder_cls, dir=dir)
         if self.domain is None:
             raise ValueError("please set `domain` when creating Downloader class.")
 
