@@ -51,6 +51,7 @@ class DSSDownloader(BaseDownloader):
         redirect_url = self._extract_redirect_url(self.agent.get(url).text)
         pdf_url, pdf_name = self._extract_pdf_url(redirect_url)
         filename = filename if filename else pdf_name
+        pdf_url = self.encoder.encode(pdf_url)
         self._download_pdf(pdf_url, filename)
         return pdf_url
 

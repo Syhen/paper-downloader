@@ -3,13 +3,16 @@
 create on 2020-12-29 17:16
 author @66492
 """
+import math
 import os
 
 import requests
+from tqdm import tqdm
 
 from paper_downloader.agent.webvpn import WebVPNAgent
 from paper_downloader.settings import settings, default_settings
 from paper_downloader.utils.encryto.aes import WebVPNEncoder
+from paper_downloader.utils.encryto.md5 import md5
 
 
 class BaseDownloader(object):
@@ -35,12 +38,57 @@ class BaseDownloader(object):
             filename = filename.replace(":", "-")
         return os.path.join(self.dir_, filename)
 
-    def _download_pdf(self, pdf_url, filename):
-        pdf_url = self.encoder.encode(pdf_url)
+    def _get_file_size(self, filename):
+        if os.path.exists(filename):
+            return os.path.getsize(filename)
+        return 0
+
+    def _get_total_file_size(self, pdf_url, response=None):
+        filename = ".%s.tmp" % md5(pdf_url, size=16)
+        if os.path.exists(filename):
+            with open(filename, "r") as f:
+                return int(f.read())
+        if response is None:
+            return 0
+        file_size = response.headers.get("Content-Length", None)
+        file_size = None if file_size is None else int(file_size)
+        with open(filename, "w") as f:
+            f.write("%s" % file_size)
+        return file_size
+
+    def _download_chuck(self, pdf_url, filename, chunk_size=50 * 1024, **download_kwargs):
+        self.agent.headers["Range"] = "bytes=%d-" % self._get_file_size(filename)
+        response = self.agent.get(pdf_url, stream=True, verify=True, **download_kwargs)
+        file_size = self._get_total_file_size(pdf_url, response)
+        total_chunk = self._get_file_size(filename)
+        total_iters = math.ceil((file_size - total_chunk) / chunk_size)
+        with open(filename, "ab") as f:
+            for chunk in tqdm(response.iter_content(chunk_size=chunk_size), total=total_iters):
+                f.write(chunk)
+                total_chunk += len(chunk)
+                f.flush()
+        return total_chunk
+
+    def _download_pdf(self, pdf_url, filename, chunk_size=50 * 1024, **kwargs):
         filename = self._complete_filename(filename)
-        with open(filename, "wb") as f:
-            response = self.agent.get(pdf_url)
-            f.write(response.content)
+        total_chunk, retry_times = self._get_file_size(filename), 0
+        response = self.agent.get(pdf_url, stream=True, verify=True, **kwargs)
+        file_size = self._get_total_file_size(pdf_url, response)
+        print("downloaded:", total_chunk, ", total size:", file_size)
+        do_not_retry = bool(file_size is None)
+        while 1:
+            total_chunk = self._get_file_size(filename)
+            try:
+                self._download_chuck(pdf_url, filename=filename, chunk_size=chunk_size, **kwargs)
+            except requests.exceptions.RequestException:
+                print("timeout...")
+                continue
+            if total_chunk >= file_size or do_not_retry:
+                break
+            retry_times += 1
+            print("downloaded:", total_chunk, ", total:", file_size)
+        print("download finished. downloaded:", total_chunk, ", total:", file_size)
+        return total_chunk == file_size
 
 
 if __name__ == '__main__':
