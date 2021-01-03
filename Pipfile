@@ -9,6 +9,7 @@ verify_ssl = false
 pycryptodome = "*"
 requests = "*"
 lxml = "==4.5.0"
+tqdm = "*"
 
 [requires]
 python_version = "3.6"
