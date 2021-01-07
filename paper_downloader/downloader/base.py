@@ -30,12 +30,17 @@ class BaseDownloader(object):
         raise NotImplemented()
 
     def _complete_filename(self, filename):
+        def filename_filter(filename):
+            filters = ["\\", "/", ":", "*", "?", "<", ">", "|", '"']
+            for filter_str in filters:
+                if filter_str in filename:
+                    filename = filename.replace(filter_str, "-")
+            return filename
         if "/" in filename:
             return filename
         if ".pdf" not in filename:
             filename += ".pdf"
-        if ":" in filename:
-            filename = filename.replace(":", "-")
+        filename = filename_filter(filename)
         return os.path.join(self.dir_, filename)
 
     def _get_file_size(self, filename):
@@ -63,10 +68,11 @@ class BaseDownloader(object):
         total_chunk = self._get_file_size(filename)
         total_iters = math.ceil((file_size - total_chunk) / chunk_size)
         with open(filename, "ab") as f:
-            for chunk in tqdm(response.iter_content(chunk_size=chunk_size), total=total_iters):
-                f.write(chunk)
-                total_chunk += len(chunk)
-                f.flush()
+            with tqdm(response.iter_content(chunk_size=chunk_size), total=total_iters) as t:
+                for chunk in t:
+                    f.write(chunk)
+                    total_chunk += len(chunk)
+                    f.flush()
         return total_chunk
 
     def _download_pdf(self, pdf_url, filename, chunk_size=50 * 1024, **kwargs):
@@ -81,12 +87,10 @@ class BaseDownloader(object):
             try:
                 self._download_chuck(pdf_url, filename=filename, chunk_size=chunk_size, **kwargs)
             except requests.exceptions.RequestException:
-                print("timeout...")
                 continue
             if total_chunk >= file_size or do_not_retry:
                 break
             retry_times += 1
-            print("downloaded:", total_chunk, ", total:", file_size)
         print("download finished. downloaded:", total_chunk, ", total:", file_size)
         return total_chunk == file_size
 
