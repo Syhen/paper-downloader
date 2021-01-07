@@ -25,7 +25,7 @@ class SciHubDownloader(BaseDownloader):
     def _get_pdf_url(self, url):
         response = self.agent.get(url)
         sel = etree.HTML(text=response.text)
-        filename = sel.xpath('//div[@id="citation"]/text()')[0]
+        filename = sel.xpath('//div[@id="citation"]/i/text()')[0]
         pdf_url = urlparse.urljoin(self.domain, sel.xpath('//div[@id="article"]/iframe/@src')[0])
         return pdf_url, filename
 
@@ -45,4 +45,4 @@ class SciHubDownloader(BaseDownloader):
 
 if __name__ == '__main__':
     scihub_downloader = SciHubDownloader()
-    print(scihub_downloader.download("10.1016/j.dss.2020.113449", filename=None, timeout=30))
+    print(scihub_downloader.download("10.1.1.643.3483", filename=None, timeout=30))
