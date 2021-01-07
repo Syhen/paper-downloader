@@ -41,3 +41,7 @@ __pypackages__/
 
 # example for test
 exp/
+
+*.tmp
+*.xlsx
+*.xls
