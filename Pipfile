@@ -4,6 +4,11 @@ url = "http://mirrors.aliyun.com/pypi/simple/"
 verify_ssl = false
 
 [dev-packages]
+pandas = "*"
+openpyxl = "*"
+xlrd = "==1.2.0"
+scrapy = "*"
+pymongo = "*"
 
 [packages]
 pycryptodome = "*"
