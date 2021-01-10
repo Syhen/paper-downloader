@@ -5,6 +5,7 @@ author @66492
 """
 import json
 import requests
+import warnings
 from urllib import parse as urlparse
 
 from lxml import etree
@@ -18,6 +19,7 @@ from paper_downloader.agent.webvpn import WebVPNAgent
 from paper_downloader.downloader.base import BaseDownloader
 from paper_downloader.utils.encryto.aes import WebVPNEncoder
 from paper_downloader.utils.encryto.md5 import md5
+from paper_downloader.utils.url_parse import query_decode
 
 
 class DSSDownloader(BaseDownloader):
@@ -62,27 +64,80 @@ class DSSDownloader(BaseDownloader):
         return pdf_url
 
 
-class PaperListDownloader(object):
-    def __init__(self, query, start_year=1991, end_year=2020, article_type="FLA%2CABS"):
-        self.query_ = urlparse.quote(query)
-        self.start_year_ = start_year
-        self.end_year_ = end_year
+class DSSPaperListDownloader(object):
+    """Downloader of search result from `https://www.sciencedirect.com/search`
+
+    Review tools for get paper title and abstract of your condition.
+    """
+    def __init__(self, query, start_year=1991, end_year=2020, subject_areas=None, article_type=None,
+                 publication_title=None):
+        """Initial of downloader. **It is recommended to use `from_url` class method.**
+
+        :param query: str. query string. query use in the `https://www.sciencedirect.com/search`.
+        :param start_year: int. start year.
+        :param end_year: int. end year.
+        :param subject_areas: str. subject area filter of site. (Area)
+        :param article_type: str. article type filter of site. (Review, Research and Others)
+        :param publication_title: str. publication title of site. (Journal)
+
+        Note that `subject_areas`, `article_type` and `publication title` is encoded by the site.
+        Note: `publication title` is importance! Some paper may in query result only when you given
+        explicit publication title.
+        """
+        self.query_ = query
+        self.start_year_ = int(start_year)
+        self.end_year_ = int(end_year)
         self.article_type_ = article_type
+        self.subject_areas_ = subject_areas
+        self.publication_title_ = publication_title
         self.agent = WebVPNAgent()
+
+    @classmethod
+    def from_url(cls, url):
+        scheme, domain, path, query, _ = urlparse.urlsplit(url)
+        query_set = query_decode(query, unquote=True)
+        if "date" not in query_set:
+            raise ValueError("`url` must have `date` condition. (customer year range)")
+        if "qs" not in query_set:
+            raise ValueError("`url` must have `qs` condition. (search condition)")
+        query = query_set["qs"]
+        start_year, end_year = query_set["date"].split("-")
+        subject_areas = query_set.get("subjectAreas", None)
+        article_type = query_set.get("articleType", None)
+        publication_title = query_set.get("publicationTitle", None)
+        return cls(query=query, start_year=start_year, end_year=end_year, subject_areas=subject_areas,
+                   article_type=article_type, publication_title=publication_title)
+
+    def _make_url(self):
+        queries = {"qs": self.query_, "date": "%s-%s" % (self.start_year_, self.end_year_)}
+        if self.subject_areas_:
+            queries["subjectAreas"] = self.subject_areas_
+        if self.article_type_:
+            queries["articalType"] = self.article_type_
+        if self.publication_title_:
+            queries["publicationTitle"] = self.publication_title_
+        payload = urlparse.urlencode(queries)
+        return "https://www.sciencedirect.com/search/api?" + payload
+
+    def _make_url_format(self):
+        return self._make_url() + "&years={years}&show=100&offset={offset}"
 
     def _download_single_list(self, url, years, offset, show=100):
         response = self.agent.get(url)
         data = response.json()["searchResults"]
-        data_columns = ["doi", "openAccess", "title", "publicationDate", "pii"]
+        data_columns = {
+            "doi": "doi", "openAccess": "open_access", "title": "title",
+            "publicationDate": "publication_date", "pii": "pii"
+        }
 
         def make_dict(i, data_columns):
             d = {"years": years, "offset": offset, "show": show}
-            for k in data_columns:
-                if k == "title":
-                    sel = etree.HTML(text=i[k])
-                    d[k] = sel.xpath("string(.)")
+            for org_key, your_key in data_columns.items():
+                if org_key == "title":
+                    sel = etree.HTML(text=i[org_key])
+                    d[your_key] = sel.xpath("string(.)")
                 else:
-                    d[k] = i[k]
+                    d[your_key] = i[org_key]
             return d
 
         return [make_dict(i, data_columns) for i in data]
@@ -109,12 +164,18 @@ class PaperListDownloader(object):
         idx = 0
         conditions = []
         tmp_years = []
+        key = ""
         while 1:
             if idx == len(years):
                 break
             data = years[idx]
             key = data["key"]
             count = data["value"]
+            if count > 1000:
+                warnings.warn("count greater than 1000, got %s" % count)
+                conditions.append((key, count))
+                idx += 1
+                continue
             if tmp_count + count > 1000:
                 conditions.append((",".join(sorted(tmp_years)), tmp_count))
                 tmp_years = []
@@ -132,22 +193,22 @@ class PaperListDownloader(object):
 
     def _download_by_years(self, years, paper_count):
         show = 100
-        # url_format = "https://www.sciencedirect.com/search/api?qs={query}&date={start}-{end}&years={years}&offset={offset}&show=100&articleTypes=FLA%2CABS&publicationTitles=271649%2C271700%2C271506%2C271680%2C271802%2C271692%2C271714&s"
-        url_format = "https://www.sciencedirect.com/search/api?qs={query}&cid=272548&date={start}-{end}&years={years}&articleTypes=FLA&show=100&offset={offset}"
+        url_format = self._make_url_format()
         datas = []
-        for i in range(int(math.ceil(paper_count * 1. / 100))):
+        for i in range(max(9, int(math.ceil(paper_count * 1. / 100)))):
             offset = i * show
-            url = url_format.format(query=self.query_, start=self.start_year_, end=self.end_year_,
-                                    years=years, offset=offset)
+            url = url_format.format(years=years, offset=offset)
             data = self._download_single_list(url, years, offset, show)
             datas.extend(data)
         return datas
 
-    def download(self, url):
-        # TODO: extract `url queries` from url & and to url_format
-        # url = "https://www.sciencedirect.com/search/api?qs={query}&date={start}-{end}&offset=0&show=100"
-        # url = url.format(query=self.query_, start=self.start_year_, end=self.end_year_)
-        total_count, years, article_types, publication_titles = self._get_total_amount(url)
+    def download(self):
+        """Download paper list with conditions
+
+        :return: list. list of dict of paper info.
+        """
+        # Publication title 应该单独考虑 # journal title and year range is recommended
+        total_count, years, article_types, publication_titles = self._get_total_amount(self._make_url())
         print("total count:", total_count)
         conditions = self._condition_planning(total_count, years, article_types, publication_titles)
         datas = []
@@ -163,9 +224,6 @@ class PaperListDownloader(object):
             response = self.agent.get(url, timeout=timeout)
         except requests.exceptions.RequestException:
             return self.download_abstract(pii, timeout)
-        # sel = etree.HTML(text=response.text)
-        # redirect_url = urlparse.unquote(sel.xpath('//input[@name="redirectURL"]/@value')[0])
-        # response = self.agent.get(redirect_url)
         sel = etree.HTML(text=response.text)
         journal = sel.xpath('//a[@class="publication-title-link"]/text()')[0]
         abstract = sel.xpath('//h2[contains(., "Abstract")]/following-sibling::div/p/text()')[0]
@@ -175,32 +233,7 @@ class PaperListDownloader(object):
 
 
 if __name__ == '__main__':
-    import pandas as pd
-    from tqdm import tqdm
-    # https://doi.org/10.1016/j.acap.2020.08.013
-    # dss_downloader = DSSDownloader()
-    # print(dss_downloader.download("https://doi.org/10.1016/j.dss.2009.05.016", filename=None))
-    # query = '("trader" OR "avatar") AND ("algorithm") AND ("competition")'
-
-    # # query = '("trader" OR "human" OR "player" OR "avatar") AND ("algorithm" OR "machine" OR "agent" OR "computer") AND ("competition")'
-    query = '("trader" OR "human" OR "player" OR "avatar") AND ("algorithm" OR "machine" OR "agent" OR "computer") AND ("competition")'
-    paper_list_downloader = PaperListDownloader(query)
-    # # url = "https://www.sciencedirect.com/search/api?qs={query}&date=1991-2020&articleTypes=FLA%2CABS&publicationTitles=271649%2C271700%2C271506%2C271680%2C271802%2C271692%2C271714&show=100&offset=800"
-    # url = "https://www.sciencedirect.com/search/api?qs={query}&cid=272548&date=1991-2020&articleTypes=FLA&show=100"
-    # url = url.format(query=query)
-    # print(url)
-    # data = paper_list_downloader.download(url)
-    # pd.DataFrame(data).to_excel("jiewa_pii_2.xlsx", index=False)
-
-    records = pd.read_excel("jiewa_pii_2.xlsx").to_dict("records")
-    datas = []
-    for record in tqdm(records):
-        try:
-            data = paper_list_downloader.download_abstract(record["pii"], timeout=10)
-        except Exception:
-            print(record)
-            continue
-        record.update(data)
-        record["keywords"] = ",".join(record["keywords"])
-        datas.append(record)
-    pd.DataFrame(datas).to_excel("jiewa_abstract_2.xlsx", index=False)
+    url = 'https://www.sciencedirect.com/search?qs=%28%22trader%22%20OR%20%22human%22%20OR%20%22player%22%20OR%20%22avatar%22%29%20AND%20%28%22algorithm%22%20OR%20%22machine%22%20OR%20%22agent%22%20OR%20%22computer%22%29%20AND%20%28%22competition%22%29&date=2010-2021&lastSelectedFacet=articleTypes&subjectAreas=1700&articleTypes=FLA'
+    dss_list_downloader = DSSPaperListDownloader.from_url(url)
+    print(dss_list_downloader._make_url_format())
+    print(dss_list_downloader.download())
