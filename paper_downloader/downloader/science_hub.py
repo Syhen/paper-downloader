@@ -44,5 +44,6 @@ class SciHubDownloader(BaseDownloader):
 
 
 if __name__ == '__main__':
+    # 10.1027/1618-3169/a000118 no paper
     scihub_downloader = SciHubDownloader()
-    print(scihub_downloader.download("10.1.1.643.3483", filename=None, timeout=30))
+    print(scihub_downloader.download("10.1016/j.geb.2006.03.011", filename=None, timeout=30))
